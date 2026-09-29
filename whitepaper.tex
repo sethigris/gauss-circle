@@ -1,0 +1,199 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{hyperref}
+\usepackage{microtype}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\DeclareMathOperator{\gcdop}{gcd}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\isqrt}{\operatorname{isqrt}}
+
+\title{Exact Lattice-Point Counting in a Disk in $\tilde O(R^{1/3})$ Time\\
+by a Stern--Brocot Convex-Hull Walk}
+\author{Joseph Anointed\\
+\texttt{seth.cse@gmail.com}}
+\date{September 28, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We study the exact evaluation of the Gauss circle count
+$N(R)=\#\{(x,y)\in\Z^2: x^2+y^2\le R\}$ for integers $R$ up to $4\cdot 10^{18}$.
+The textbook method costs $\Theta(\sqrt R)$ operations. We reduce the problem to a sum
+$\sum_{x=1}^{m}\lfloor\sqrt{R-x^2}\rfloor$ over a region where the boundary has slope in $[-1,0]$,
+and evaluate it by walking along the upper convex hull of the lattice points under the arc,
+discovering hull edges by descending the Stern--Brocot tree and summing each edge in closed form.
+Only integer arithmetic is used. The implementation agrees with two independent oracles on
+every $R\le 2\times 10^{6}$, on 24{,}000 structured inputs up to $\approx 1.8\times10^{13}$, on 300 random inputs
+up to $9\times 10^{14}$, and on seven large inputs up to $4\times 10^{18}$.
+Measured work grows as $R^{0.338}$; at $R=10^{18}$ it takes 27\,ms versus 3.7\,s for the $O(\sqrt R)$ sweep.
+We prove correctness of the reduction, the edge summation, and the pruning rules; we do \emph{not} prove
+the per-edge descent cost, which is supported here by measurement only.
+The technique belongs to a known family and we make no claim of novelty (Section~\ref{sec:prior}).
+\end{abstract}
+
+\section{Problem and baseline}
+Let $r=\isqrt(R)$. Row-by-row summation gives
+\[
+N(R)=1+4r+4\sum_{x=1}^{r}\left\lfloor\sqrt{R-x^2}\right\rfloor ,
+\]
+which needs $r\approx\sqrt R$ integer square roots (or a two-pointer sweep). For $R=10^{18}$ this is $10^9$ steps.
+The bottleneck is that each column is visited individually. To do better one must count many columns at once.
+
+\section{Reduction to a low-slope arc}
+Let $m=\max\{m: 2m^2\le R\}=\isqrt(\lfloor R/2\rfloor)$, $f(x)=\lfloor\sqrt{R-x^2}\rfloor$, and
+$F=\sum_{x=1}^{m}f(x)$.
+
+\begin{lemma}[Octant reduction]\label{lem:oct}
+Let $T=\#\{(x,y): x,y\ge1,\ x^2+y^2\le R\}$. Then $T=2F-m^2$ and $N(R)=1+4r+4T$.
+\end{lemma}
+\begin{proof}
+The four axis half-lines contribute $4r$ points and the origin $1$; the remaining points split into four congruent open quadrants of size $T$.
+For $1\le x\le m$ we have $R-x^2\ge R-m^2\ge m^2$, so $f(x)\ge m$. The set $\{x\le m\}$ contributes $F$ points of $T$; by the symmetry $x\leftrightarrow y$ so does $\{y\le m\}$.
+Their intersection is $\{1\le x,y\le m\}$, which lies in the disk because $2m^2\le R$, so it has $m^2$ points.
+If $x,y>m$ then $x^2+y^2\ge 2(m+1)^2>R$, so nothing lies outside the union. Inclusion--exclusion gives $T=2F-m^2$.
+\end{proof}
+
+On $[0,m]$ the arc $g(x)=\sqrt{R-x^2}$ is concave and decreasing with $-1\le g'\le 0$, since $|g'(x)|=x/g(x)\le 1$ when $2x^2\le R$. Consequently $f(c)-f(c+1)\in\{0,1\}$ for consecutive columns.
+
+\section{Hull structure and closed-form edge sums}
+Let $K=\{(x,y): x\le m,\ x^2+y^2\le R\}$ (convex) and let $H$ be the convex hull of $K\cap\Z^2\cap\{x\ge0\}$.
+
+\begin{lemma}[Columns are read off the hull]\label{lem:hull}
+For every integer $c\in[0,m]$, the highest lattice point of $K$ in column $c$ is $(c,\lfloor h(c)\rfloor)$, where $h$ is the upper boundary of $H$.
+\end{lemma}
+\begin{proof}
+$H\subseteq K$ since $K$ is convex, so any lattice point of column $c$ with $y\le h(c)$ lies in $K$; hence $f(c)\ge\lfloor h(c)\rfloor$. Conversely $(c,f(c))\in H$ so $f(c)\le h(c)$, and $f(c)$ is an integer.
+\end{proof}
+
+Thus $F$ equals the sum of $\lfloor h(c)\rfloor$ over columns, and $h$ is piecewise linear with rational slopes. The slopes lie in $[-1,0]$ by the remark above, so every edge direction is a primitive vector $(dx,dy)$ with $0\le dy\le dx$ meaning ``right $dx$, down $dy$''.
+
+\begin{lemma}[Edge sum]\label{lem:edge}
+For coprime $dx\ge1$, $dy\ge0$ and integer $y$,
+\[
+\sum_{j=1}^{dx}\left\lfloor y-\tfrac{j\,dy}{dx}\right\rfloor
+= dx\,y-C,\qquad C=\frac{dx\,dy+dx+dy-1}{2}.
+\]
+Hence $k$ consecutive steps of the same vector starting at $(x,y)$ contribute
+$k\,dx\,y-dx\,dy\binom{k}{2}-kC$ to $F$.
+\end{lemma}
+\begin{proof}
+$\lfloor y-a\rfloor=y-\lceil a\rceil$. For coprime $(dx,dy)$, $\sum_{j=1}^{dx-1}\lfloor j\,dy/dx\rfloor=(dx-1)(dy-1)/2$, and $\lceil j\,dy/dx\rceil=\lfloor j\,dy/dx\rfloor+1$ for $1\le j<dx$, while the term $j=dx$ equals $dy$. So $\sum_j\lceil j\,dy/dx\rceil=\tfrac{(dx-1)(dy-1)}2+(dx-1)+dy=C$. The $k$-step formula follows by summing over starting points $(x+i\,dx,\,y-i\,dy)$.
+\end{proof}
+
+\section{Finding the edges: Stern--Brocot descent}
+Write $\sigma=dy/dx\in[0,1]$ for the steepness of a direction. From a hull vertex $P$, the next edge has the \emph{smallest} steepness among directions $v$ with $P+v\in K$. Directions with steepness in $[0,1]$ are the nodes of the Stern--Brocot tree between $0/1=(1,0)$ and $1/1=(1,1)$.
+
+\begin{lemma}[Reach is an interval and is monotone]\label{lem:reach}
+For $P\in K$ and steepness $\sigma\in[0,1]$, $\{t\ge0: P+t(1,-\sigma)\in K\}=[0,T_\sigma]$, and $T_\sigma$ is non-decreasing in $\sigma$.
+\end{lemma}
+\begin{proof}
+Interval: $K$ is convex. Monotone: lowering $\sigma$ moves the ray up; the lower boundary $-g$ is never reached because along the ray $y\ge x-1\ge -1$ for lattice-adjacent points (Section~2 slope bound), so leaving $K$ can only happen through the upper arc, and a ray that is higher leaves no later.
+\end{proof}
+
+\begin{lemma}[Pruning]\label{lem:prune}
+Let $L,R_t$ be Stern--Brocot neighbours ($\det=1$), with $P+L\notin K$, every direction flatter than $L$ having no point in $K$, and $P+R_t\in K$. Let $M=L+R_t$.
+(a) If $P+M\notin K$, then every direction flatter than or equal to $M$ has no point in $K$; replace $L\leftarrow M$.
+(b) If $P+M\in K$, replace $R_t\leftarrow M$ (pushing the old one on the stack).
+(c) Let $k=\max\{k: P+kR_t\in K\}$. Any direction strictly between $L$ and $R_t$ that has a point in $K$ has $dx\le (k+1)\,dx(R_t)-1$. So if $dx(L)+dx(R_t)$ exceeds this bound, $R_t$ is the flattest usable direction.
+\end{lemma}
+\begin{proof}
+(a) Directions in the subtree between $L$ and $M$ have $dx\ge dx(L)+dx(M)>dx(M)$, and by Lemma~\ref{lem:reach} their reach is at most $T_{\sigma(M)}<dx(M)$, so they have no lattice point in $K$. (b) is the definition of the search.
+(c) Any $v$ strictly between $L$ and $R_t$ is flatter than $R_t$, so $dx(v)\le T_{\sigma(v)}\le T_{\sigma(R_t)}<(k+1)\,dx(R_t)$.
+\end{proof}
+
+\begin{algorithm}[t]
+\caption{HullWalk$(R)$: computes $F=\sum_{x=1}^{m}\lfloor\sqrt{R-x^2}\rfloor$}
+\KwIn{integer $R\ge1$} \KwOut{$F$ and $m$}
+$m\gets\isqrt(\lfloor R/2\rfloor)$; $(x,y)\gets(0,\isqrt(R))$; $F\gets0$; stack $S\gets[(1,1),(1,0)]$ (top $=(1,0)$)\;
+\While{$x<m$}{
+  $(dx,dy)\gets\mathrm{top}(S)$; $k\gets$ MaxSteps$(x,y,dx,dy)$ \tcp*{exponential + binary search}
+  $F\mathrel{+}=k\,dx\,y-dx\,dy\binom k2-kC$; $x\mathrel{+}=k\,dx$; $y\mathrel{-}=k\,dy$\;
+  $L\gets\mathrm{pop}(S)$; \lIf{$x\ge m$}{stop}
+  \While{$\mathrm{top}(S)$ leaves $K$ from $(x,y)$}{$L\gets\mathrm{pop}(S)$}
+  \Repeat{stop}{
+    $R_t\gets\mathrm{top}(S)$; $M\gets L+R_t$\;
+    \lIf{$x+dx(M)>m$}{break}
+    \eIf{$(x,y)+M\in K$}{push $M$}{
+      $k'\gets$ MaxSteps for $R_t$ (cached)\;
+      \lIf{$dx(M)+dx(R_t)>(k'+1)dx(R_t)-1$}{break}
+      $L\gets M$}
+  }
+}
+\Return{$F$}
+\end{algorithm}
+
+\begin{theorem}[Correctness]\label{thm:corr}
+Algorithm~1 returns $F$ exactly, hence $N(R)=1+4r+4(2F-m^2)$.
+\end{theorem}
+\begin{proof}[Proof sketch]
+Invariant: at the top of each iteration $(x,y)$ is the top lattice point of column $x$ (a hull vertex, or the start), the sum of $f$ over columns $1..x$ has been added, and no direction flatter than the stack top's predecessor chain has a point in $K$. Lemma~\ref{lem:prune} shows each descent move preserves the invariant and that on termination the top of the stack is the flattest direction with a point in $K$, i.e.\ the next hull edge (it exists because $(1,1)$ always stays inside while $x<m$: $f(c+1)\ge f(c)-1$). Lemma~\ref{lem:edge} adds exactly the column tops along the edge, which by Lemma~\ref{lem:hull} equal $f$. Adjacency ($\det=1$) of consecutive stack entries is preserved by pushes of mediants.
+\end{proof}
+
+\begin{remark}
+A tempting shortcut is false: the predicate ``$L+jR_t$ is inside'' is \emph{not} monotone in $j$ (it is out, then possibly in, then out again as $dx$ outgrows the reach), so a plain binary search over $j$ is invalid. The algorithm therefore steps one Stern--Brocot node at a time and relies on Lemma~\ref{lem:prune}(c) to stop.
+\end{remark}
+
+\section{Complexity}
+Every hull edge costs one MaxSteps call, $O(\log R)$ predicate evaluations. The number of hull edges is at most the number of vertices of the convex hull of the integer points of a disk of radius $\sqrt R$, which is $\Theta(R^{1/3})$ by the classical result of Balog and B\'ar\'any~\cite{balogbarany}. The octant walk uses about $1/8$ of the circle. What we do \emph{not} prove is that the total number of Stern--Brocot descent steps is $O(R^{1/3}\log R)$; the standard amortization for hyperbola versions is folklore and we did not rederive it. Section~\ref{sec:exp} measures it.
+
+\section{Experimental validation}\label{sec:exp}
+Code: \texttt{gauss.py} (reference, Python integers) and \texttt{gauss.cpp} (C++17, \texttt{\_\_int128} for $x^2+y^2$ and sums), single core, \texttt{-O2}. Oracles: (A) $O(\sqrt R)$ two-pointer sweep; (B) $N=1+4\sum_{k\ge0}\bigl(\lfloor R/(4k+1)\rfloor-\lfloor R/(4k+3)\rfloor\bigr)$, used in Python for $R\le3000$.
+
+\paragraph{Correctness results (all zero mismatches).}
+\begin{itemize}\setlength\itemsep{0pt}
+\item Python vs.\ both oracles, every $R\in[0,3000]$; vs.\ oracle A, every $R\in[3001,120000]$ and 300 random $R\le10^{10}$.
+\item C++ vs.\ oracle A, every $R\in[0,2\cdot10^6]$.
+\item C++: 24{,}000 structured inputs $a^2$, $a^2\pm1$, $a^2+b^2$, $a^2+b^2-1$, $2a^2$ ($a,b\le3\cdot10^6$), plus 300 random $R\in[10^{11},9\cdot10^{14}]$.
+\item $R=10^k+12345$ for $k=6,8,\dots,18$ and $R=4\cdot10^{18}$.
+\end{itemize}
+
+\paragraph{Performance.}
+\begin{table}[h]\centering
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$R$ & fast (s) & sweep (s) & predicate calls & hull edges & calls$/R^{1/3}$\\
+\midrule
+$10^{6}$  & 0.00001 & 0.000 & 572 & 44 & 5.7\\
+$10^{8}$  & 0.00002 & 0.000 & 2{,}742 & 210 & 5.9\\
+$10^{10}$ & 0.00007 & 0.000 & 13{,}502 & 921 & 6.3\\
+$10^{12}$ & 0.00030 & 0.005 & 64{,}675 & 4{,}313 & 6.5\\
+$10^{14}$ & 0.00182 & 0.038 & 301{,}730 & 20{,}117 & 6.5\\
+$10^{16}$ & 0.00616 & 0.409 & 1{,}410{,}596 & 93{,}259 & 6.5\\
+$10^{18}$ & 0.02748 & 3.691 & 6{,}553{,}646 & 432{,}570 & 6.6\\
+\bottomrule
+\end{tabular}
+\caption{Measured cost for $R=10^k+12345$. Every value matched the sweep.}
+\end{table}
+A log--log least-squares fit gives exponents $0.338$ for predicate calls and $0.332$ for hull edges, consistent with $R^{1/3}$. The ratio calls$/R^{1/3}$ is nearly flat (5.7 to 6.6 over twelve decades), so a $\log R$ factor is not visible in this range. The edge count is about $0.43\,R^{1/3}$.
+At $R=4\cdot10^{18}$: $N=12{,}566{,}370{,}614{,}358{,}945{,}969$ from both methods (this exceeds the signed 64-bit range, hence 128-bit accumulation).
+As a sanity check on the asymptotics, $N(10^{18}+12345)-\pi R=-24{,}688$, far below $\sqrt R=10^9$.
+
+\section{Limitations and threats to validity}
+\begin{itemize}\setlength\itemsep{0pt}
+\item The $O(R^{1/3}\log R)$ bound for total descent work is empirical, over $R\le4\cdot10^{18}$, not proved.
+\item Testing is exhaustive only to $2\cdot10^6$; beyond that it is sampled. Structured inputs target boundary cases but cannot rule out a rare failure.
+\item The proofs of Lemma~\ref{lem:reach} and Theorem~\ref{thm:corr} are sketched at the level above; a machine-checked proof was not attempted.
+\item The C++ code assumes $R<2^{63}$ for the input and uses 128-bit for products; larger $R$ needs wider types.
+\item Timings are single runs on one machine, not averaged.
+\end{itemize}
+
+\section{Prior art and what is new}\label{sec:prior}
+Counting lattice points under a convex curve with a Stern--Brocot walk is known for the hyperbola (divisor summatory function) and appears in the competitive-programming and computational number theory literature. Its application to the circle is a direct adaptation. This paper's contribution is an explicit derivation for the disk (octant reduction, column-top lemma, closed-form edge sums, a sound pruning rule), a correction of one plausible-looking but invalid shortcut (Remark~1), and a test record. I did not search the literature exhaustively; the algorithm should be assumed to be known.
+
+\section{Method notes}
+Two errors were caught during development, both by reasoning before testing: (i) the claim that ``inside'' is monotone along $L+jR_t$ (false, Remark~1); (ii) a stopping rule based only on the remaining $x$-range $m-x$, which is correct but makes each edge cost up to $O(\sqrt R)$; Lemma~\ref{lem:prune}(c) replaces it with a local reach bound. The first version of the code that implemented these rules passed all tests.
+
+\begin{thebibliography}{9}
+\bibitem{balogbarany} A.~Balog and I.~B\'ar\'any, On the convex hull of the integer points in a disc, in \emph{Proc.\ 7th Ann.\ Symp.\ Computational Geometry}, ACM, 1991, 162--165.
+\end{thebibliography}
+
+\end{document}
